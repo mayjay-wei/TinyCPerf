@@ -13,18 +13,15 @@ A lightweight, header-only C library for high-precision function profiling with 
 - 📊 **Statistical analysis**: Automatic calculation of min, max, average, and standard deviation
 - 💾 **CSV export**: Easy data analysis with spreadsheet applications
 - 🔒 **Thread-safe**: Per-file static storage with no global conflicts
-- 📝 **Simple API**: Just 3 macros to get started
+- 📝 **Simple API**: Just 2 macros to get started
 
 ## Quick Start
 
 ### Basic Usage
 
 ```c
+#define PROFILING  // Enable profiling (should be defined before including header)
 #include "c_profiler.h"
-
-// 1. Declare profiling logs for functions you want to measure
-CPROF_DECLARE_LOG(my_function);
-CPROF_DECLARE_LOG(another_function);
 
 void my_function(int n) {
     // Your original code here
@@ -34,7 +31,8 @@ void my_function(int n) {
 }
 
 int main() {
-    // 2. Profile function calls using CPROF_SCOPE
+    // 1. Profile function calls using CPROF_SCOPE
+    // No need to declare logs - they're created automatically!
     CPROF_SCOPE(my_function, {
         my_function(1000);
     });
@@ -47,10 +45,10 @@ int main() {
         }
     });
     
-    // 3. Export results to CSV file
+    // 2. Export results to CSV file
     CPROF_dump_to_file("profiling_report.csv");
     
-    // 4. Clean up allocated memory
+    // 3. Clean up allocated memory
     CPROF_cleanup();
     
     return 0;
@@ -62,7 +60,7 @@ int main() {
 The library generates a CSV file with detailed timing statistics:
 
 ```csv
-FunctionName,CallCount,TotalTime(usec),AvgTime(usec),MinTime(usec),MaxTime(usec),StdDev(usec)
+FunctionName,Count,Total(us),Avg(us),Min(us),Max(us),StdDev(us)
 my_function,5,1250.5,250.1,245.2,255.8,4.2
 another_function,3,875.3,291.8,289.1,295.4,3.2
 ```
@@ -71,29 +69,23 @@ another_function,3,875.3,291.8,289.1,295.4,3.2
 
 ### Core Macros
 
-#### `CPROF_DECLARE_LOG(func_name)`
-Declares a static profiling log for the specified function. Must be called once per function you want to profile, typically at file scope.
+#### `CPROF_SCOPE(func_name, code_block)`
+Profiles the execution time of the given code block. The profiling log is created automatically - no need to declare it beforehand!
 
 **Parameters:**
 - `func_name`: Unique identifier for the function (typically the actual function name)
-
-**Example:**
-```c
-CPROF_DECLARE_LOG(matrix_multiply);
-CPROF_DECLARE_LOG(data_processing);
-```
-
-#### `CPROF_SCOPE(func_name, code_block)`
-Profiles the execution time of the given code block and stores the result in the associated log.
-
-**Parameters:**
-- `func_name`: Must match a previously declared log name
 - `code_block`: Code to be profiled, enclosed in braces `{}`
 
 **Example:**
 ```c
 CPROF_SCOPE(matrix_multiply, {
     matrix_multiply(matA, matB, result, size);
+});
+
+// You can use the same function name multiple times
+// - timing data will be aggregated automatically
+CPROF_SCOPE(matrix_multiply, {
+    matrix_multiply(matC, matD, result2, size);
 });
 ```
 
@@ -124,6 +116,20 @@ CPROF_cleanup();
 - Linux system with POSIX.1-2001 support
 - CMake 4.1+ (for provided build configuration)
 
+### Compilation Flags
+
+**Important**: To enable profiling, you must define `PROFILING` before including the header:
+
+```c
+#define PROFILING  // Must be defined to enable profiling
+#include "c_profiler.h"
+```
+
+Or pass it as a compiler flag:
+```bash
+gcc -DPROFILING -std=c11 -O2 -I./inc src/main.c -lm -o tinycperf_example
+```
+
 ### Using CMake
 
 ```bash
@@ -136,6 +142,10 @@ make
 ### Manual Compilation
 
 ```bash
+# With profiling enabled
+gcc -DPROFILING -std=c11 -O2 -I./inc src/main.c -lm -o tinycperf_example
+
+# Without profiling (CPROF_SCOPE becomes no-op)
 gcc -std=c11 -O2 -I./inc src/main.c -lm -o tinycperf_example
 ```
 
@@ -150,6 +160,7 @@ TinyCPerf uses file-scoped static variables, meaning:
 
 ### Memory Management
 
+- **Automatic log creation**: Profiling logs are created automatically when first used
 - Dynamic arrays automatically resize as needed (initial capacity: 1024 entries)
 - All memory is allocated per-log and cleaned up with `CPROF_cleanup()`
 - Static variables ensure no memory leaks between profiling sessions
@@ -166,6 +177,7 @@ TinyCPerf uses file-scoped static variables, meaning:
 2. **Linux only**: Currently depends on `CLOCK_MONOTONIC`
 3. **Function naming**: Log names must be valid C identifiers
 4. **Static storage**: Cannot profile recursively without separate log names
+5. **Compilation flag**: Must define `PROFILING` to enable profiling functionality
 
 ## Contributing
 

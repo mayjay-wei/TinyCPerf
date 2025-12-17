@@ -2,6 +2,7 @@
 // Created by TCWei on 12/16/25.
 //
 
+#define PROFILING
 #include <stdio.h>
 
 #include "c_profiler.h"
@@ -17,9 +18,6 @@ int light_operation(int a, int b) {
   int c = a + b;
   return c;
 }
-
-CPROF_DECLARE_LOG(heavy_calculation);
-CPROF_DECLARE_LOG(light_operation);
 
 int main(void) {
   // --- Profiling heavy_calculation ---
