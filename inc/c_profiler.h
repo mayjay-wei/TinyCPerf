@@ -67,43 +67,55 @@ static int64_t TimeDiff(const TimePoint *timeA_p, const TimePoint *timeB_p) {
 // that block. func_name: Unique name of the function (usually the function name
 // itself) code: The original code to be executed by the function
 #if defined(PROFILING)
-#define CPROF_SCOPE(func_name, code)                                         \
-  do {                                                                       \
-    /* 1. 建立一個靜態指標，它在該程式碼位置是唯一的 */                      \
-    /* 但它指向的 TimeLog 則可以與其他位置共享 */                            \
-    static TimeLog *__local_log_ptr = NULL;                                  \
-    /* 2. 如果指標還沒初始化，去全域尋找或建立一個同名的 Log */              \
-    if (__local_log_ptr == NULL) {                                           \
-      __local_log_ptr = CPROF_GetOrCreateLog(#func_name);                    \
-    }                                                                        \
-    if (__local_log_ptr) {                                                   \
-      /* 2. Start timing */                                                  \
-      TimePoint start_time = CPROF_StartProfile();                           \
-                                                                             \
-      /* 3. Execute code */                                                  \
-      code;                                                                  \
-                                                                             \
-      /* 4. End timing */                                                    \
-      TimePoint end_time = CPROF_StopProfile();                              \
-                                                                             \
-      /* 5. Calculate duration (convert to seconds) */                       \
-      float duration = (float)TimeDiff(&end_time, &start_time);              \
-                                                                             \
-      /* 6. Write to dedicated TimeLog variable */                           \
-      TimeLog_push(__local_log_ptr, duration);                               \
-      /* [NEW] Debug output: Use #func_name to print function name string */ \
-      /* Note: We use #func_name to convert variable name to string */       \
-      printf("CPROF_DEBUG: %s execution time: %.3f microseconds\n",          \
-             #func_name, duration / 1000.0f);                                \
-    }                                                                        \
+#define CPROF_SCOPE_TAG(func_name, tag, code)                                              \
+  do {                                                                                     \
+    /* 1. 建立一個靜態指標，它在該程式碼位置是唯一的 */               \
+    /* 但它指向的 TimeLog 則可以與其他位置共享 */                           \
+    static TimeLog *__local_log_ptr = NULL;                                                \
+    /* 2. 如果指標還沒初始化，去全域尋找或建立一個同名的 Log */     \
+    if (!__local_log_ptr) {                                                                \
+      char __combined_name[256];                                                           \
+      /* 判斷 tag 的型別並格式化 (這裡簡化處理，支援整數與字串) */  \
+      /* 如果你的環境支援 C11，可以用 _Generic，否則用 printf 格式化 */ \
+      if (__builtin_types_compatible_p(__typeof__(tag), char *) ||                         \
+          __builtin_types_compatible_p(__typeof__(tag), const char *)) {                   \
+        snprintf(__combined_name, sizeof(__combined_name), "%s@%s",                        \
+                 #func_name, (char *)(size_t)tag);                                         \
+      } else {                                                                             \
+        snprintf(__combined_name, sizeof(__combined_name), "%s@%lld",                      \
+                 #func_name, (long long)tag);                                              \
+      }                                                                                    \
+      __local_log_ptr = CPROF_GetOrCreateLog(__combined_name);                             \
+    }                                                                                      \
+    if (__local_log_ptr) {                                                                 \
+      /* 2. Start timing */                                                                \
+      TimePoint start_time = CPROF_StartProfile();                                         \
+                                                                                           \
+      /* 3. Execute code */                                                                \
+      {code}                                                                               \
+                                                                                           \
+      /* 4. End timing */                                                                  \
+      TimePoint end_time = CPROF_StopProfile();                                            \
+                                                                                           \
+      /* 5. Calculate duration (convert to seconds) */                                     \
+      float duration = (float)TimeDiff(&end_time, &start_time);                            \
+                                                                                           \
+      /* 6. Write to dedicated TimeLog variable */                                         \
+      TimeLog_push(__local_log_ptr, duration);                                             \
+    }                                                                                      \
   } while (0)
+
 #else
-#define CPROF_SCOPE(func_name, code) \
-  /* Execute code */                 \
-  do {                               \
-    code;                            \
+#define CPROF_SCOPE_TAG(func_name, tag, code) \
+  /* Execute code */                          \
+  do {                                        \
+    {                                         \
+      code                                    \
+    }                                         \
   } while (0)
 #endif
+
+#define CPROF_SCOPE(func_name, code) CPROF_SCOPE_TAG(func_name, 0, code)
 
 static inline void TimeLog_Init(TimeLog *log) {
   log->size = 0;
@@ -115,6 +127,12 @@ static inline void TimeLog_Init(TimeLog *log) {
 static inline TimeLog *CPROF_GetOrCreateLog(const char *name) {
   // A. 搜尋現有的 Log 是否有同名的
   for (size_t i = 0; i < __cprof_entry_count; i++) {
+    // printf("CPROF_DEBUG: Entry count: %zu\n", __cprof_entry_count);
+    // printf("CPROF_DEBUG: Comparing %s with %s\n",
+    // __cprof_log_entries[i]->name,
+    //        name);
+    // printf("CPROF_DEBUG: strcmp result: %d\n",
+    //        strcmp(__cprof_log_entries[i]->name, name));
     // 使用 strcmp 比較名稱 (需 #include <string.h>)
     if (strcmp(__cprof_log_entries[i]->name, name) == 0) {
       return __cprof_log_entries[i];  // 找到同名的，直接回傳
@@ -125,7 +143,16 @@ static inline TimeLog *CPROF_GetOrCreateLog(const char *name) {
   if (__cprof_entry_count < CPROF_MAX_ENTRIES) {
     TimeLog *new_log = (TimeLog *)malloc(sizeof(TimeLog));
     if (new_log) {
-      new_log->name = name;
+      // 複製名稱字串，避免指向局部變數
+      size_t name_len = strlen(name) + 1;
+      char *name_copy = (char *)malloc(name_len);
+      if (name_copy) {
+        strcpy(name_copy, name);
+        new_log->name = name_copy;
+      } else {
+        free(new_log);
+        return NULL;  // 記憶體分配失敗
+      }
       TimeLog_Init(new_log);
       __cprof_log_entries[__cprof_entry_count++] = new_log;
       return new_log;
@@ -181,6 +208,8 @@ static inline CPROF_Stats CPROF_calculate_stats(const TimeLog *log) {
     stats.total_time += t;
     if (t < stats.min_time) stats.min_time = t;
     if (t > stats.max_time) stats.max_time = t;
+    // printf("CPROF_DEBUG: %s execution time: %.3f microseconds\n", log->name,
+    //        t / 1000.0f);
   }
 
   stats.avg_time = stats.total_time / (float)log->size;
@@ -213,6 +242,7 @@ static inline void CPROF_dump_to_file(const char *filename) {
   for (size_t func = 0; func < __cprof_entry_count; func++) {
     // Traverse the static log list of current C file
     const TimeLog *current = __cprof_log_entries[func];
+    if (!current) continue;
     // [KEY] Calculate statistics
     const CPROF_Stats stats = CPROF_calculate_stats(current);
     // Convert nanoseconds (ns) to microseconds (us) for output (because your
@@ -229,27 +259,31 @@ static inline void CPROF_dump_to_file(const char *filename) {
   }
   fclose(f);
 #else
-  ; // do nothing
+  ;  // do nothing
 #endif
 }
 
 // Static inline function for memory cleanup
-static inline void CPROF_cleanup(void) {
 #if defined(PROFILING)
+static inline void CPROF_cleanup(void) {
   for (size_t func = 0; func < __cprof_entry_count; func++) {
     // Traverse the static log list of current C file
     TimeLog *current = __cprof_log_entries[func];
-    if (!current) return;
+    if (!current) continue;
     // Free Dynamic Array data within TimeLog
-    if (current->data) free(current->data);
-    free(current);
+    if (current->data) free((void *)current->data);
+    // Free the name string copy
+    if (current->name) free((void *)current->name);
+    free((void *)current);
     // 3. 將指標清空，避免懸空指標 (Dangling Pointer)
     __cprof_log_entries[func] = NULL;
   }
   __cprof_entry_count = 0;
-#else
-  ;  // do nothing
-#endif
 }
+#else
+static inline void CPROF_cleanup(void) {
+  ;  // do nothing
+}
+#endif
 
 #endif  // TINYCPERF_C_PROFILER_H

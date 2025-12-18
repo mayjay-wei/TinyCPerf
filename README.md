@@ -13,6 +13,7 @@ A lightweight, header-only C library for high-precision function profiling with 
 - 📊 **Statistical analysis**: Automatic calculation of min, max, average, and standard deviation
 - 💾 **CSV export**: Easy data analysis with spreadsheet applications
 - 🔒 **Thread-safe**: Per-file static storage with no global conflicts
+- 🧪 **Multi-testcase support**: Profile multiple test scenarios for the same function
 - 📝 **Simple API**: Just 2 macros to get started
 
 ## Quick Start
@@ -37,6 +38,15 @@ int main() {
         my_function(1000);
     });
     
+    // 2. Profile multiple test cases for the same function
+    CPROF_SCOPE_TAG(my_function, "small", {
+        my_function(100);  // Small dataset test
+    });
+    
+    CPROF_SCOPE_TAG(my_function, "large", {
+        my_function(10000); // Large dataset test
+    });
+    
     CPROF_SCOPE(another_function, {
         // Profile any code block
         int sum = 0;
@@ -45,10 +55,10 @@ int main() {
         }
     });
     
-    // 2. Export results to CSV file
+    // 3. Export results to CSV file
     CPROF_dump_to_file("profiling_report.csv");
     
-    // 3. Clean up allocated memory
+    // 4. Clean up allocated memory
     CPROF_cleanup();
     
     return 0;
@@ -60,9 +70,11 @@ int main() {
 The library generates a CSV file with detailed timing statistics:
 
 ```csv
-FunctionName,Count,Total(us),Avg(us),Min(us),Max(us),StdDev(us)
-my_function,5,1250.5,250.1,245.2,255.8,4.2
-another_function,3,875.3,291.8,289.1,295.4,3.2
+Function,Count,Total(us),Avg(us),Min(us),Max(us),StdDev(us)
+my_function@0,5,1250.5,250.1,245.2,255.8,4.2
+my_function@small,3,180.2,60.1,58.5,62.1,1.8
+my_function@large,2,2150.8,1075.4,1070.1,1080.7,7.5
+another_function@0,3,875.3,291.8,289.1,295.4,3.2
 ```
 
 ## API Reference
@@ -86,6 +98,30 @@ CPROF_SCOPE(matrix_multiply, {
 // - timing data will be aggregated automatically
 CPROF_SCOPE(matrix_multiply, {
     matrix_multiply(matC, matD, result2, size);
+});
+```
+
+#### `CPROF_SCOPE_TAG(func_name, tag, code_block)`
+Profiles the execution time with a specific tag to distinguish different test cases for the same function.
+
+**Parameters:**
+- `func_name`: Base function identifier
+- `tag`: String or integer tag to distinguish test cases (e.g., "small", "large", 1, 2)
+- `code_block`: Code to be profiled, enclosed in braces `{}`
+
+**Example:**
+```c
+// Different test scenarios for the same function
+CPROF_SCOPE_TAG(sort_algorithm, "100_items", {
+    sort_algorithm(array_100, 100);
+});
+
+CPROF_SCOPE_TAG(sort_algorithm, "1000_items", {
+    sort_algorithm(array_1000, 1000);
+});
+
+CPROF_SCOPE_TAG(sort_algorithm, 1, {
+    sort_algorithm(random_data, size);
 });
 ```
 
@@ -173,11 +209,12 @@ TinyCPerf uses file-scoped static variables, meaning:
 
 ## Limitations
 
-1. **Single compilation unit**: Profiling data is isolated per `.c` file
-2. **Linux only**: Currently depends on `CLOCK_MONOTONIC`
-3. **Function naming**: Log names must be valid C identifiers
-4. **Static storage**: Cannot profile recursively without separate log names
-5. **Compilation flag**: Must define `PROFILING` to enable profiling functionality
+1. **Entry limit**: Maximum 1024 total profiling entries across all functions and test cases
+2. **Single compilation unit**: Profiling data is isolated per `.c` file
+3. **Linux only**: Currently depends on `CLOCK_MONOTONIC`
+4. **Function naming**: Log names must be valid C identifiers
+5. **Static storage**: Cannot profile recursively without separate log names
+6. **Compilation flag**: Must define `PROFILING` to enable profiling functionality
 
 ## Contributing
 
