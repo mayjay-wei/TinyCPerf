@@ -7,6 +7,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include <time.h>
 typedef struct timespec TimePoint;
 
@@ -33,6 +34,7 @@ typedef struct {
   float total_time;
   float min_time;
   float max_time;
+  size_t max_count;
   float avg_time;
   float std_dev;  // Standard Deviation
 } CPROF_Stats;
@@ -73,7 +75,7 @@ static int64_t TimeDiff(const TimePoint *timeA_p, const TimePoint *timeB_p) {
     /* 但它指向的 TimeLog 則可以與其他位置共享 */                           \
     static TimeLog *__local_log_ptr = NULL;                                                \
     /* 2. 如果指標還沒初始化，去全域尋找或建立一個同名的 Log */     \
-    if (!__local_log_ptr) {                                                                \
+    /*if (!__local_log_ptr) { */                                                               \
       char __combined_name[256];                                                           \
       /* 判斷 tag 的型別並格式化 (這裡簡化處理，支援整數與字串) */  \
       /* 如果你的環境支援 C11，可以用 _Generic，否則用 printf 格式化 */ \
@@ -86,7 +88,7 @@ static int64_t TimeDiff(const TimePoint *timeA_p, const TimePoint *timeB_p) {
                  #func_name, (long long)tag);                                              \
       }                                                                                    \
       __local_log_ptr = CPROF_GetOrCreateLog(__combined_name);                             \
-    }                                                                                      \
+    /*}*/                                                                                      \
     if (__local_log_ptr) {                                                                 \
       /* 2. Start timing */                                                                \
       TimePoint start_time = CPROF_StartProfile();                                         \
@@ -201,13 +203,14 @@ static inline CPROF_Stats CPROF_calculate_stats(const TimeLog *log) {
   stats.total_time = 0.0f;
   stats.min_time = log->data[0];
   stats.max_time = log->data[0];
+  stats.max_count = 0;
 
   // --- First traversal: Calculate sum, Min and Max ---
   for (size_t i = 0; i < log->size; i++) {
     const float t = log->data[i];
     stats.total_time += t;
     if (t < stats.min_time) stats.min_time = t;
-    if (t > stats.max_time) stats.max_time = t;
+    if (t > stats.max_time) {stats.max_time = t; stats.max_count=i;}
     // printf("CPROF_DEBUG: %s execution time: %.3f microseconds\n", log->name,
     //        t / 1000.0f);
   }
@@ -238,7 +241,7 @@ static inline void CPROF_dump_to_file(const char *filename) {
   }
 
   // CSV Header
-  fprintf(f, "Function,Count,Total(us),Avg(us),Min(us),Max(us),StdDev(us)\n");
+  fprintf(f, "Function,Count,Total(us),Avg(us),Min(us),Max(us),Max(count),StdDev(us)\n");
   for (size_t func = 0; func < __cprof_entry_count; func++) {
     // Traverse the static log list of current C file
     const TimeLog *current = __cprof_log_entries[func];
@@ -249,11 +252,12 @@ static inline void CPROF_dump_to_file(const char *filename) {
     // TimeDiff outputs nanoseconds)
     const float us_factor = 1000.0f;  // 1000 ns = 1 us
     // Write results to file
-    fprintf(f, "%s,%zu,%.1f,%.1f,%.1f,%.1f,%.1f\n", stats.name, stats.count,
+    fprintf(f, "%s,%zu,%.1f,%.1f,%.1f,%.1f,%zu,%.1f\n", stats.name, stats.count,
             stats.total_time / us_factor,  // Total Time (us)
             stats.avg_time / us_factor,    // Avg Time (us)
             stats.min_time / us_factor,    // Min Time (us)
             stats.max_time / us_factor,    // Max Time (us)
+            stats.max_count,               // Max Occur (count)
             stats.std_dev / us_factor      // StdDev (us)
     );
   }
