@@ -20,6 +20,7 @@ int light_operation(int a, int b) {
 }
 
 int main(void) {
+  for (int i = 0; i < 5; i++) {
   // --- Profiling heavy_calculation ---
   CPROF_SCOPE(heavy_calculation, heavy_calculation(100000););
 
@@ -34,9 +35,10 @@ int main(void) {
   CPROF_SCOPE_TAG(heavy_calculation, 1, heavy_calculation(100000););
   const char *tag_str = "Second";
   CPROF_SCOPE_TAG(heavy_calculation, tag_str, heavy_calculation(50000););
+  }
 
   // Output to file (only outputs functions tracked in main.c)
-  CPROF_dump_to_file("../main_profiling_report.csv");
+  CPROF_dump_to_file("../data/main_profiling_report.csv");
 
   // Free memory
   CPROF_cleanup();

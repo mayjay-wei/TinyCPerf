@@ -4,14 +4,15 @@
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey.svg)
 
-A lightweight, header-only C library for high-precision function profiling with minimal overhead. TinyCPerf provides an easy-to-use interface for measuring execution time of code blocks with nanosecond precision using Linux's `CLOCK_MONOTONIC`.
+A lightweight, header-only C library for high-precision function profiling with minimal overhead. TinyCPerf provides an easy-to-use interface for measuring execution time of code blocks with nanosecond precision using Linux's `CLOCK_MONOTONIC`, outputting results in microseconds for readability.
 
 ## Features
 
 - 🚀 **Header-only**: Single include, no separate compilation needed
 - ⚡ **Minimal overhead**: Static inline functions with compiler optimization
 - 📊 **Statistical analysis**: Automatic calculation of min, max, average, and standard deviation
-- 💾 **CSV export**: Easy data analysis with spreadsheet applications
+- � **Histogram analysis**: Automatic generation of timing distribution histograms (10 bins)
+- �💾 **CSV export**: Easy data analysis with spreadsheet applications
 - 🔒 **Thread-safe**: Per-file static storage with no global conflicts
 - 🧪 **Multi-testcase support**: Profile multiple test scenarios for the same function
 - 📝 **Simple API**: Just 2 macros to get started
@@ -67,15 +68,54 @@ int main() {
 
 ### Sample Output
 
-The library generates a CSV file with detailed timing statistics:
+The library generates a CSV file with detailed timing statistics and histogram data:
 
 ```csv
-Function,Count,Total(us),Avg(us),Min(us),Max(us),StdDev(us)
-my_function@0,5,1250.5,250.1,245.2,255.8,4.2
-my_function@small,3,180.2,60.1,58.5,62.1,1.8
-my_function@large,2,2150.8,1075.4,1070.1,1080.7,7.5
-another_function@0,3,875.3,291.8,289.1,295.4,3.2
+Function,Count,Total(us),Avg(us),Min(us),Max(us),Max(count),StdDev(us)
+my_function@0,5,1250.5,250.1,245.2,255.8,2,4.2
+my_function@small,3,180.2,60.1,58.5,62.1,1,1.8
+my_function@large,2,2150.8,1075.4,1070.1,1080.7,0,7.5
+another_function@0,3,875.3,291.8,289.1,295.4,1,3.2
+
+# --- Histogram Data ---
+Function,step(us),"Bin(Start,End](us)",Count
+my_function@0,Underflow,(<237.7),0
+my_function@0,2.5,"(237.7,240.2]",1
+my_function@0,2.5,"(240.2,242.7]",0
+my_function@0,2.5,"(242.7,245.2]",1
+my_function@0,2.5,"(245.2,247.7]",0
+my_function@0,2.5,"(247.7,250.2]",1
+my_function@0,2.5,"(250.2,252.7]",1
+my_function@0,2.5,"(252.7,255.2]",0
+my_function@0,2.5,"(255.2,257.7]",1
+my_function@0,2.5,"(257.7,260.2]",0
+my_function@0,2.5,"(260.2,262.5]",0
+my_function@0,Overflow,(>262.5),0
 ```
+
+**Output Format:**
+- **Statistics Section**: Basic timing statistics in microseconds
+- **Histogram Section**: Distribution analysis with 10 bins based on avg ± 2×std deviation range
+- **Max(count)**: Index of the measurement with the maximum execution time
+
+### Data Visualization
+
+The CSV output format is designed to be **Microsoft Excel friendly** for easy data visualization:
+
+1. **Import the CSV file** directly into Excel
+2. **Select the histogram data** (Function, Bin ranges, Count columns)
+3. **Create charts** using Excel's built-in chart tools:
+   - Column charts for timing distribution
+   - Line charts for trend analysis
+   - Scatter plots for performance correlation
+
+The histogram data format with clearly labeled bin ranges makes it simple to generate professional timing distribution charts for performance analysis reports.
+
+**Example Excel Chart Output:**
+
+![Excel Histogram Demo](data/excel_histogram_demo.png)
+
+*The above chart shows a typical timing distribution histogram generated from TinyCPerf data in Microsoft Excel, displaying the frequency distribution of execution times across different bins.*
 
 ## API Reference
 
@@ -126,7 +166,7 @@ CPROF_SCOPE_TAG(sort_algorithm, 1, {
 ```
 
 #### `CPROF_dump_to_file(filename)`
-Exports all profiling data from the current compilation unit to a CSV file with statistical analysis.
+Exports all profiling data from the current compilation unit to a CSV file with statistical analysis and histogram distribution.
 
 **Parameters:**
 - `filename`: Path to the output CSV file
@@ -135,6 +175,11 @@ Exports all profiling data from the current compilation unit to a CSV file with 
 ```c
 CPROF_dump_to_file("performance_report.csv");
 ```
+
+**Output includes:**
+- Basic timing statistics (count, total, avg, min, max, std dev)
+- Timing distribution histogram with 10 bins
+- Overflow/underflow counts for values outside the histogram range
 
 #### `CPROF_cleanup()`
 Releases all dynamically allocated memory used by the profiling system. Call this before program termination.
@@ -206,6 +251,7 @@ TinyCPerf uses file-scoped static variables, meaning:
 - Timing precision: Nanosecond (using `clock_gettime(CLOCK_MONOTONIC)`)
 - Output precision: Microsecond (for readability)
 - Statistical calculations use sample standard deviation (N-1 denominator)
+- Histogram bins: 10 bins by default, covering avg ± 2×std deviation range
 
 ## Limitations
 

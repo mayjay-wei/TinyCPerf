@@ -20,6 +20,7 @@ typedef struct TimeLog {
 
 // 假設一個 C 檔案中最多有 1024 個不同的 Profiling 範圍
 #define CPROF_MAX_ENTRIES 1024
+#define CPROF_USEC_PER_NSEC (0.001f)
 
 // 靜態陣列：每個 C 檔獨立的指標陣列 (內部連結)
 // 這些指標初始為 NULL，用於儲存動態分配的 TimeLog 結構體
@@ -69,42 +70,37 @@ static int64_t TimeDiff(const TimePoint *timeA_p, const TimePoint *timeB_p) {
 // that block. func_name: Unique name of the function (usually the function name
 // itself) code: The original code to be executed by the function
 #if defined(PROFILING)
-#define CPROF_SCOPE_TAG(func_name, tag, code)                                              \
-  do {                                                                                     \
-    /* 1. 建立一個靜態指標，它在該程式碼位置是唯一的 */               \
-    /* 但它指向的 TimeLog 則可以與其他位置共享 */                           \
-    static TimeLog *__local_log_ptr = NULL;                                                \
-    /* 2. 如果指標還沒初始化，去全域尋找或建立一個同名的 Log */     \
-    /*if (!__local_log_ptr) { */                                                               \
-      char __combined_name[256];                                                           \
-      /* 判斷 tag 的型別並格式化 (這裡簡化處理，支援整數與字串) */  \
-      /* 如果你的環境支援 C11，可以用 _Generic，否則用 printf 格式化 */ \
-      if (__builtin_types_compatible_p(__typeof__(tag), char *) ||                         \
-          __builtin_types_compatible_p(__typeof__(tag), const char *)) {                   \
-        snprintf(__combined_name, sizeof(__combined_name), "%s@%s",                        \
-                 #func_name, (char *)(size_t)tag);                                         \
-      } else {                                                                             \
-        snprintf(__combined_name, sizeof(__combined_name), "%s@%lld",                      \
-                 #func_name, (long long)tag);                                              \
-      }                                                                                    \
-      __local_log_ptr = CPROF_GetOrCreateLog(__combined_name);                             \
-    /*}*/                                                                                      \
-    if (__local_log_ptr) {                                                                 \
-      /* 2. Start timing */                                                                \
-      TimePoint start_time = CPROF_StartProfile();                                         \
-                                                                                           \
-      /* 3. Execute code */                                                                \
-      {code}                                                                               \
-                                                                                           \
-      /* 4. End timing */                                                                  \
-      TimePoint end_time = CPROF_StopProfile();                                            \
-                                                                                           \
-      /* 5. Calculate duration (convert to seconds) */                                     \
-      float duration = (float)TimeDiff(&end_time, &start_time);                            \
-                                                                                           \
-      /* 6. Write to dedicated TimeLog variable */                                         \
-      TimeLog_push(__local_log_ptr, duration);                                             \
-    }                                                                                      \
+#define CPROF_SCOPE_TAG(func_name, tag, code)                                            \
+  do {                                                                                   \
+    /* 1. Create a unique pointer in the code */                                         \
+    /* but the time log can be shared with other code */                                 \
+    static TimeLog *__local_log_ptr = NULL;                                              \
+    /* 2. Find the pointer of the log in global or create one */                         \
+    /*if (!__local_log_ptr) { */                                                         \
+    char __combined_name[256];                                                           \
+    /* 判斷 tag 的型別並格式化 (這裡簡化處理，支援整數與字串) */  \
+    /* 如果你的環境支援 C11，可以用 _Generic，否則用 printf 格式化 */ \
+    if (__builtin_types_compatible_p(__typeof__(tag), char *) ||                         \
+        __builtin_types_compatible_p(__typeof__(tag), const char *)) {                   \
+      snprintf(__combined_name, sizeof(__combined_name), "%s@%s", #func_name,            \
+               (char *)(size_t)tag);                                                     \
+    } else {                                                                             \
+      snprintf(__combined_name, sizeof(__combined_name), "%s@%lld",                      \
+               #func_name, (long long)tag);                                              \
+    }                                                                                    \
+    __local_log_ptr = CPROF_GetOrCreateLog(__combined_name);                             \
+    /*}*/                                                                                \
+    if (__local_log_ptr) {                                                               \
+      /* 2. Start timing */                                                              \
+      TimePoint start_time = CPROF_StartProfile();                                       \
+      /* 3. Execute code */                                                              \
+      {code} /* 4. End timing */                                                         \
+      TimePoint end_time = CPROF_StopProfile();                                          \
+      /* 5. Calculate duration (convert to seconds) */                                   \
+      float duration = (float)TimeDiff(&end_time, &start_time);                          \
+      /* 6. Write to dedicated TimeLog variable */                                       \
+      TimeLog_push(__local_log_ptr, duration);                                           \
+    }                                                                                    \
   } while (0)
 
 #else
@@ -127,7 +123,7 @@ static inline void TimeLog_Init(TimeLog *log) {
 }
 
 static inline TimeLog *CPROF_GetOrCreateLog(const char *name) {
-  // A. 搜尋現有的 Log 是否有同名的
+  // A. Find if there is the same name log already exists
   for (size_t i = 0; i < __cprof_entry_count; i++) {
     // printf("CPROF_DEBUG: Entry count: %zu\n", __cprof_entry_count);
     // printf("CPROF_DEBUG: Comparing %s with %s\n",
@@ -135,17 +131,17 @@ static inline TimeLog *CPROF_GetOrCreateLog(const char *name) {
     //        name);
     // printf("CPROF_DEBUG: strcmp result: %d\n",
     //        strcmp(__cprof_log_entries[i]->name, name));
-    // 使用 strcmp 比較名稱 (需 #include <string.h>)
+    // using strcmp to compare names (needs to #include <string.h>)
     if (strcmp(__cprof_log_entries[i]->name, name) == 0) {
-      return __cprof_log_entries[i];  // 找到同名的，直接回傳
+      return __cprof_log_entries[i];  // Found the same log, return it
     }
   }
 
-  // B. 如果沒找到，且陣列還有空間，則建立新的
+  // B. If the name of the tag isn't found, create a new TimeLog
   if (__cprof_entry_count < CPROF_MAX_ENTRIES) {
     TimeLog *new_log = (TimeLog *)malloc(sizeof(TimeLog));
     if (new_log) {
-      // 複製名稱字串，避免指向局部變數
+      // Copy a name string to prevent pointing to a local variable
       size_t name_len = strlen(name) + 1;
       char *name_copy = (char *)malloc(name_len);
       if (name_copy) {
@@ -153,14 +149,14 @@ static inline TimeLog *CPROF_GetOrCreateLog(const char *name) {
         new_log->name = name_copy;
       } else {
         free(new_log);
-        return NULL;  // 記憶體分配失敗
+        return NULL;  // Failed to allocate memory
       }
       TimeLog_Init(new_log);
       __cprof_log_entries[__cprof_entry_count++] = new_log;
       return new_log;
     }
   }
-  return NULL;  // 空間不足或分配失敗
+  return NULL;  // No enough space or failed to allocate
 }
 
 static inline size_t TimeLog_Resize(TimeLog *log) {
@@ -193,26 +189,28 @@ static inline void TimeLog_push(TimeLog *log, const float duration) {
 // Calculate and fill statistics for a single TimeLog
 static inline CPROF_Stats CPROF_calculate_stats(const TimeLog *log) {
   CPROF_Stats stats = {0};
-  if (log->size == 0) {
-    // If no data, set to default values
-    return stats;
-  }
+  // If no data, set to default values
+  if (log->size == 0) return stats;
 
   stats.name = log->name;
   stats.count = log->size;
   stats.total_time = 0.0f;
-  stats.min_time = log->data[0];
-  stats.max_time = log->data[0];
+
+  // Convert first value to get initial min/max in microseconds
+  float first_val_us = log->data[0] * CPROF_USEC_PER_NSEC;
+  stats.max_time = stats.min_time = first_val_us;
   stats.max_count = 0;
 
   // --- First traversal: Calculate sum, Min and Max ---
   for (size_t i = 0; i < log->size; i++) {
-    const float t = log->data[i];
-    stats.total_time += t;
-    if (t < stats.min_time) stats.min_time = t;
-    if (t > stats.max_time) {stats.max_time = t; stats.max_count=i;}
-    // printf("CPROF_DEBUG: %s execution time: %.3f microseconds\n", log->name,
-    //        t / 1000.0f);
+    const float t_us =
+        log->data[i] * CPROF_USEC_PER_NSEC;  // Convert to microseconds
+    stats.total_time += t_us;
+    if (t_us < stats.min_time) stats.min_time = t_us;
+    if (t_us > stats.max_time) {
+      stats.max_time = t_us;
+      stats.max_count = i;
+    }
   }
 
   stats.avg_time = stats.total_time / (float)log->size;
@@ -220,7 +218,9 @@ static inline CPROF_Stats CPROF_calculate_stats(const TimeLog *log) {
   // --- Second traversal: Calculate standard deviation (Variance) ---
   float sum_of_sq_diff = 0.0f;
   for (size_t i = 0; i < log->size; i++) {
-    const float diff = log->data[i] - stats.avg_time;
+    const float t_us =
+        log->data[i] * CPROF_USEC_PER_NSEC;  // Convert to microseconds
+    const float diff = t_us - stats.avg_time;
     sum_of_sq_diff += diff * diff;
   }
 
@@ -229,6 +229,54 @@ static inline CPROF_Stats CPROF_calculate_stats(const TimeLog *log) {
       (log->size > 1) ? sum_of_sq_diff / (float)(log->size - 1) : 0.0f;
   stats.std_dev = sqrtf(variance);
   return stats;
+}
+
+#define CPROF_BINS (10)
+static inline void CPROF_dump_histogram(FILE *f, const TimeLog *log,
+                                        const CPROF_Stats *stats) {
+  if (log->size == 0) return;
+
+  // Both stats and data are already in microseconds
+
+  // Use average ± 2 standard deviations as the core observation range
+  float range_start = stats->avg_time - (2 * stats->std_dev);
+  if (range_start < stats->min_time) range_start = stats->min_time;
+
+  float range_end = stats->avg_time + (2 * stats->std_dev);
+  if (range_end > stats->max_time) range_end = stats->max_time;
+
+  float step = (range_end - range_start) / CPROF_BINS;
+  // To prevent step being zero
+  if (step <= 0) step = 0.1f;  // Use 0.1μs minimum step
+
+  int counts[10] = {0};
+  int out_of_range_low = 0;
+  int out_of_range_high = 0;
+
+  for (size_t i = 0; i < log->size; i++) {
+    float val_us =
+        log->data[i] * CPROF_USEC_PER_NSEC;  // Convert to microseconds
+    if (val_us < range_start) {
+      out_of_range_low++;
+    } else if (val_us >= range_end) {
+      out_of_range_high++;
+    } else {
+      int bin_idx = (int)((val_us - range_start) / step);
+      if (bin_idx >= CPROF_BINS) bin_idx = CPROF_BINS - 1;
+      counts[bin_idx]++;
+    }
+  }
+
+  // Output histogram data to file (in microseconds)
+  fprintf(f, "%s,Underflow,(<%.0f),%d\n", log->name, range_start,
+          out_of_range_low);
+  for (int i = 0; i < CPROF_BINS; i++) {
+    fprintf(f, "%s,%.0f,\"(%.0f,%.0f]\",%d\n", log->name, step,
+            (range_start + i * step), (range_start + (i + 1) * step),
+            counts[i]);
+  }
+  fprintf(f, "%s,Overflow,(>%.0f),%d\n", log->name, range_end,
+          out_of_range_high);
 }
 
 // Static inline function for outputting all logs collected in a single C file
@@ -241,25 +289,35 @@ static inline void CPROF_dump_to_file(const char *filename) {
   }
 
   // CSV Header
-  fprintf(f, "Function,Count,Total(us),Avg(us),Min(us),Max(us),Max(count),StdDev(us)\n");
+  fprintf(f,
+          "Function,Count,Total(us),Avg(us),Min(us),Max(us),Max(count),StdDev("
+          "us)\n");
+  CPROF_Stats stats[CPROF_MAX_ENTRIES] = {};
   for (size_t func = 0; func < __cprof_entry_count; func++) {
     // Traverse the static log list of current C file
     const TimeLog *current = __cprof_log_entries[func];
     if (!current) continue;
     // [KEY] Calculate statistics
-    const CPROF_Stats stats = CPROF_calculate_stats(current);
+    const CPROF_Stats stat = stats[func] = CPROF_calculate_stats(current);
     // Convert nanoseconds (ns) to microseconds (us) for output (because your
     // TimeDiff outputs nanoseconds)
-    const float us_factor = 1000.0f;  // 1000 ns = 1 us
     // Write results to file
-    fprintf(f, "%s,%zu,%.1f,%.1f,%.1f,%.1f,%zu,%.1f\n", stats.name, stats.count,
-            stats.total_time / us_factor,  // Total Time (us)
-            stats.avg_time / us_factor,    // Avg Time (us)
-            stats.min_time / us_factor,    // Min Time (us)
-            stats.max_time / us_factor,    // Max Time (us)
-            stats.max_count,               // Max Occur (count)
-            stats.std_dev / us_factor      // StdDev (us)
+    fprintf(f, "%s,%zu,%.0f,%.0f,%.0f,%.0f,%zu,%.0f\n", stat.name, stat.count,
+            stat.total_time,  // Total Time (us)
+            stat.avg_time,    // Avg Time (us)
+            stat.min_time,    // Min Time (us)
+            stat.max_time,    // Max Time (us)
+            stat.max_count,   // Max Occur (count)
+            stat.std_dev      // StdDev (us)
     );
+  }
+  fprintf(f, "\n# --- Histogram Data ---\n");
+  fprintf(f, "Function,step(us),\"Bin(Start,End](us)\",Count\n");
+  for (size_t func = 0; func < __cprof_entry_count; func++) {
+    const TimeLog *current = __cprof_log_entries[func];
+    if (!current) continue;
+    // Use the same stats calculated above
+    CPROF_dump_histogram(f, current, &stats[func]);
   }
   fclose(f);
 #else
@@ -279,7 +337,7 @@ static inline void CPROF_cleanup(void) {
     // Free the name string copy
     if (current->name) free((void *)current->name);
     free((void *)current);
-    // 3. 將指標清空，避免懸空指標 (Dangling Pointer)
+    // Clear the pointer in the static array to avoid dangling pointer
     __cprof_log_entries[func] = NULL;
   }
   __cprof_entry_count = 0;
