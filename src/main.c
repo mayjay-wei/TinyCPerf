@@ -42,5 +42,53 @@ int main(void) {
 
   // Free memory
   CPROF_cleanup();
+
+  // === CPROF Cost Testing ===
+  printf("Starting CPROF cost analysis...\n");
+  
+  // Test profiling overhead with different scenarios
+  for (int i = 0; i < 1000; i++) {
+    // Test 1: Empty operation profiling cost
+    CPROF_SCOPE(profiling_empty, ;);
+    
+    // Test 2: Simple operation profiling cost
+    CPROF_SCOPE(profiling_simple, int dummy = i * 2;);
+    
+    // Test 3: Small calculation profiling cost
+    CPROF_SCOPE(profiling_small_calc, {
+      int result = 0;
+      for (int j = 0; j < 10; j++) {
+        result += j;
+      }
+    });
+  }
+  
+  // Test 4: Cost of statistics calculation
+  for (int i = 0; i < 100; i++) {
+    CPROF_SCOPE(profiling_calc_stats, {
+      // Simulate some work to have meaningful data
+      volatile int sum = 0;
+      for (int j = 0; j < 1000; j++) {
+        sum += j;
+      }
+      // Calculate stats (this will be measured)
+      CPROF_Stats dummy_stats = CPROF_calculate_stats(__cprof_log_entries[0]);
+    });
+  }
+  
+  // Test 5: Cost of file dump operation
+  for (int i = 0; i < 10; i++) {
+    CPROF_SCOPE(profiling_file_dump, {
+      CPROF_dump_to_file("../data/temp_profiling_cost_test.csv");
+    });
+  }
+  
+  // Output CPROF cost analysis results
+  CPROF_dump_to_file("../data/cprof_cost_analysis.csv");
+  
+  printf("CPROF cost analysis complete. Results saved to ../data/cprof_cost_analysis.csv\n");
+  
+  // Final cleanup
+  CPROF_cleanup();
   return 0;
 }
