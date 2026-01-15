@@ -43,19 +43,19 @@ typedef struct {
 
 #ifdef __linux__
 #if 1 == 1
-static TimePoint CPROF_StartProfile(void) {
+[[maybe_unused]] static TimePoint CPROF_StartProfile(void) {
   TimePoint start;
   if (clock_gettime(CLOCK_MONOTONIC, &start) == 0) return start;
   return (TimePoint){0, 0};
 }
 
-static TimePoint CPROF_StopProfile(void) {
+[[maybe_unused]] static TimePoint CPROF_StopProfile(void) {
   TimePoint end;
   if (clock_gettime(CLOCK_MONOTONIC, &end) == 0) return end;
   return (TimePoint){0, 0};
 }
 
-static uint64_t TimeDiff(const TimePoint *end_time,
+[[maybe_unused]] static uint64_t TimeDiff(const TimePoint *end_time,
                          const TimePoint *start_time) {
   int64_t sec_diff = end_time->tv_sec - start_time->tv_sec;
   int64_t nsec_diff = end_time->tv_nsec - start_time->tv_nsec;
@@ -135,7 +135,7 @@ static inline void TimeLog_Init(TimeLog *log) {
   if (log->data == NULL) log->capacity = 0;  // Allocation failed
 }
 
-static inline TimeLog *CPROF_GetOrCreateLog(const char *name) {
+[[maybe_unused]] static inline TimeLog *CPROF_GetOrCreateLog(const char *name) {
   // A. Find if there is the same name log already exists
   for (size_t i = 0; i < __cprof_entry_count; i++) {
     // printf("CPROF_DEBUG: Entry count: %zu\n", __cprof_entry_count);
@@ -189,7 +189,7 @@ static inline size_t TimeLog_Resize(TimeLog *log) {
 // These must be defined as static inline to ensure they are only compiled
 // within each C file, and the compiler will try to inline them to reduce
 // function call overhead.
-static inline void TimeLog_push(TimeLog *log, const uint64_t duration) {
+[[maybe_unused]] static inline void TimeLog_push(TimeLog *log, const uint64_t duration) {
   if (!log) return;
   if (log->capacity == 0) TimeLog_Init(log);
   if (log->size == log->capacity) {
@@ -200,7 +200,7 @@ static inline void TimeLog_push(TimeLog *log, const uint64_t duration) {
 }
 
 // Calculate and fill statistics for a single TimeLog
-static inline CPROF_Stats CPROF_calculate_stats(const TimeLog *log) {
+[[maybe_unused]]  inline CPROF_Stats CPROF_calculate_stats(const TimeLog *log) {
   CPROF_Stats stats = {0};
   // If no data, set to default values
   if (log->size == 0) return stats;
@@ -244,7 +244,7 @@ static inline CPROF_Stats CPROF_calculate_stats(const TimeLog *log) {
 #define CPROF_BINS (10u)
 #define CPROF_LABEL_UNDERFLOW "Below range"
 #define CPROF_LABEL_OVERFLOW "Above range"
-static inline void CPROF_dump_histogram(FILE *f, const TimeLog *log,
+[[maybe_unused]] static inline void CPROF_dump_histogram(FILE *f, const TimeLog *log,
                                         const CPROF_Stats *stats) {
   if (log->size == 0) return;
 
@@ -308,7 +308,7 @@ static inline void CPROF_dump_histogram(FILE *f, const TimeLog *log,
 }
 
 // Static inline function for outputting all logs collected in a single C file
-static inline void CPROF_dump_to_file(const char *filename) {
+[[maybe_unused]]  inline void CPROF_dump_to_file(const char *filename) {
 #if defined(PROFILING)
   FILE *f = fopen(filename, "w");
   if (!f) {
@@ -371,7 +371,7 @@ static inline void CPROF_cleanup(void) {
   __cprof_entry_count = 0;
 }
 #else
-static inline void CPROF_cleanup(void) {
+[[maybe_unused]] static inline void CPROF_cleanup(void) {
   ;  // do nothing
 }
 #endif
